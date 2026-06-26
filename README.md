@@ -61,7 +61,45 @@ SELECT pg_ssl_guard_validate('10.0.0.141/32', 'app_user');
 ```sql
 SELECT * FROM pg_ssl_guard_hba_rules;
 SELECT * FROM pg_ssl_guard_active_ssl WHERE usename = 'app_user';
+SELECT * FROM pg_ssl_guard_ssl_config;
+SELECT * FROM pg_ssl_guard_ssl_file_status;
+SELECT * FROM pg_ssl_guard_connection_summary;
+SELECT * FROM pg_ssl_guard_cipher_summary;
+SELECT * FROM pg_ssl_guard_hba_errors;
 ```
+
+## SSL 涉及的指标与功能
+
+SSL 访问控制不只是写入一条 `hostssl` 规则，还应覆盖“配置是否开启、证书是否可用、规则是否正确、连接是否真的加密、使用了什么协议和加密套件”等检查点。本插件覆盖以下能力：
+
+| 类别 | 指标或功能 | 插件实现 |
+| --- | --- | --- |
+| SSL 开关 | PostgreSQL 是否启用 SSL | `pg_ssl_guard_ssl_config.ssl_enabled` |
+| 证书配置 | 服务端证书文件路径 | `pg_ssl_guard_ssl_config.ssl_cert_file` |
+| 私钥配置 | 服务端私钥文件路径 | `pg_ssl_guard_ssl_config.ssl_key_file` |
+| CA 配置 | CA 文件路径，用于校验客户端证书 | `pg_ssl_guard_ssl_config.ssl_ca_file` |
+| 吊销配置 | CRL 文件或目录 | `pg_ssl_guard_ssl_config.ssl_crl_file`、`pg_ssl_guard_ssl_config.ssl_crl_dir` |
+| 协议版本 | 最低和最高 TLS 协议版本 | `pg_ssl_guard_ssl_config.ssl_min_protocol_version`、`ssl_max_protocol_version` |
+| 加密套件 | 服务端允许的 SSL/TLS 加密套件 | `pg_ssl_guard_ssl_config.ssl_ciphers` |
+| 证书文件状态 | 证书、私钥、CA、CRL、DH 参数文件是否存在 | `pg_ssl_guard_ssl_file_status` |
+| 访问规则 | 指定客户端 CIDR、用户、数据库是否强制 SSL | `pg_ssl_guard_apply` |
+| 规则删除 | 删除插件托管规则 | `pg_ssl_guard_remove` |
+| 规则校验 | 校验客户端 CIDR、用户、数据库、认证方式 | `pg_ssl_guard_validate` |
+| 配置重载 | 重新加载 `pg_hba.conf` | `pg_ssl_guard_reload` |
+| HBA 规则检查 | 查看 SSL 相关 `hostssl`/`hostnossl` 规则 | `pg_ssl_guard_hba_rules` |
+| HBA 错误检查 | 查看 `pg_hba.conf` 解析错误 | `pg_ssl_guard_hba_errors` |
+| 当前连接明细 | 查看每个远程连接是否使用 SSL | `pg_ssl_guard_active_ssl` |
+| 当前连接汇总 | 查看 SSL/非 SSL 连接数量和占比 | `pg_ssl_guard_connection_summary` |
+| 协议和套件分布 | 统计当前连接使用的 TLS 版本、加密套件、加密位数 | `pg_ssl_guard_cipher_summary` |
+
+这些指标可以帮助你回答几个关键问题：
+
+- PostgreSQL 服务端是否具备 SSL 能力。
+- 服务端证书和私钥文件是否存在。
+- `pg_hba.conf` 是否存在 SSL 规则或解析错误。
+- 指定客户端和用户是否已经被写入强制 SSL 策略。
+- 当前实际连接是否真的走了 SSL，而不是只写了规则。
+- 当前 SSL 连接使用的 TLS 协议版本、加密套件和加密位数是否符合安全要求。
 
 ## 函数说明
 
@@ -184,6 +222,78 @@ pg_ssl_guard_reload() RETURNS boolean
 - `cipher`：SSL/TLS 加密套件。
 - `bits`：加密位数。
 - `client_dn`：客户端证书 DN。只有使用客户端证书时才可能有值。
+
+### pg_ssl_guard_ssl_config
+
+查看 PostgreSQL 当前 SSL 参数。
+
+字段说明：
+
+- `ssl_enabled`：是否启用 SSL。对应 PostgreSQL 参数 `ssl`。
+- `ssl_cert_file`：服务端证书文件。客户端会用它识别服务端身份。
+- `ssl_key_file`：服务端私钥文件。必须与服务端证书匹配。
+- `ssl_ca_file`：CA 证书文件。需要校验客户端证书时使用。
+- `ssl_crl_file`：证书吊销列表文件，用于拒绝已吊销证书。
+- `ssl_crl_dir`：证书吊销列表目录。
+- `ssl_min_protocol_version`：允许的最低 TLS 协议版本。
+- `ssl_max_protocol_version`：允许的最高 TLS 协议版本。
+- `ssl_ciphers`：允许使用的 SSL/TLS 加密套件列表。
+- `ssl_prefer_server_ciphers`：是否优先使用服务端加密套件顺序。
+- `ssl_dh_params_file`：DH 参数文件路径。
+- `ssl_passphrase_command`：私钥有口令时用于获取口令的命令。
+- `ssl_passphrase_command_supports_reload`：口令命令是否支持配置 reload。
+
+### pg_ssl_guard_ssl_file_status
+
+检查 SSL 相关文件是否存在。
+
+字段说明：
+
+- `file_item`：文件配置项名称，例如 `ssl_cert_file`、`ssl_key_file`。
+- `file_path`：文件路径。
+- `required_for_ssl`：是否为启用服务端 SSL 的关键文件。
+- `exists`：文件是否存在。
+- `size`：文件大小。
+- `modification`：文件最后修改时间。
+- `is_directory`：该路径是否为目录。
+
+### pg_ssl_guard_connection_summary
+
+汇总当前远程连接的 SSL 使用情况。
+
+字段说明：
+
+- `remote_connections`：当前远程连接总数。
+- `ssl_connections`：当前 SSL 连接数量。
+- `non_ssl_connections`：当前非 SSL 连接数量。
+- `ssl_percent`：SSL 连接占远程连接的百分比。
+- `remote_users`：当前远程连接涉及的数据库用户数量。
+- `remote_client_addresses`：当前远程客户端 IP 数量。
+
+### pg_ssl_guard_cipher_summary
+
+统计当前 SSL 连接使用的 TLS 协议和加密套件。
+
+字段说明：
+
+- `version`：TLS 协议版本，例如 `TLSv1.3`。
+- `cipher`：加密套件名称。
+- `bits`：加密位数。
+- `connection_count`：使用该协议和加密套件的连接数量。
+
+### pg_ssl_guard_hba_errors
+
+查看 `pg_hba.conf` 解析错误。
+
+字段说明：
+
+- `line_number`：错误规则所在行号。
+- `type`：规则类型。
+- `database`：规则数据库字段。
+- `user_name`：规则用户字段。
+- `address`：规则客户端地址字段。
+- `auth_method`：规则认证方式。
+- `error`：PostgreSQL 返回的解析错误说明。
 
 ## 规则写入行为
 
