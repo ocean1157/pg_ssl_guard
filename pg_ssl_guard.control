@@ -1,0 +1,5 @@
+comment = 'Manage PostgreSQL SSL access rules for client CIDRs and roles'
+default_version = '1.0'
+module_pathname = '$libdir/pg_ssl_guard'
+relocatable = true
+superuser = true
