@@ -20,10 +20,9 @@ make PG_CONFIG=/path/to/pg_config
 make PG_CONFIG=/path/to/pg_config install
 ```
 
-如果你的 PostgreSQL 16 环境通过 `.bash_profile16` 加载，可以这样执行：
+可以这样执行：
 
 ```sh
-source ~/.bash_profile16
 make PG_CONFIG=$(which pg_config)
 make PG_CONFIG=$(which pg_config) install
 ```
