@@ -1,4 +1,4 @@
-comment = 'Manage PostgreSQL SSL access rules for client CIDRs and roles'
+comment = '按客户端 CIDR、数据库用户和数据库名管理 PostgreSQL SSL 访问规则'
 default_version = '1.0'
 module_pathname = '$libdir/pg_ssl_guard'
 relocatable = true
